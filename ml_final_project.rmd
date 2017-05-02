@@ -1,0 +1,144 @@
+---
+title: "Machine Learning Project"
+author: "Ayuta Padhi"
+date: "April 30, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### Goal of the project
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+### Getting and exploring the data
+
+```{r}
+set.seed(12345)
+
+trainingUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training_set <- read.csv(url(trainingUrl), na.strings=c("NA","#DIV/0!",""))
+test_set <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+dim(training_set); dim(test_set)
+```
+The training dataset has 19622 observations and 160 variables, and the testing data set contains 20 observations and the same variables as the training set. We are trying to predict the outcome of the variable **classe** in the training set.
+
+### Load required packages
+
+```{r message=F, error=F, warning=F}
+library(lattice); library(ggplot2)
+library(caret); library(rpart); library(rpart.plot);
+library(randomForest); library(knitr)
+library(rattle)
+```
+### Cleaning the data
+
+We need to remove the predictor columns from the training set that contain any missing values.
+
+```{r}
+#Remove the columns with NA 
+training_set <- training_set[, colSums(is.na(training_set)) == 0]
+test_set <- test_set[, colSums(is.na(test_set)) == 0]
+# Remove the first 7 columns as they have close to zero influence on the classe valiable
+training_set <- training_set[, -c(1:7)]
+test_set <- test_set[, -c(1:7)]
+#Remove NearZeroVariance variables
+nzv <- nearZeroVar(training_set, saveMetrics=TRUE)
+training_set <- training_set[,nzv$nzv==FALSE]
+```
+
+### Partitioning the training dataset into training and validation set
+
+we split the cleaned training set trainData into a training set (70%) for prediction and a validation set (30%) to compute the **out-of-sample** errors.
+
+```{r}
+set.seed(7826) 
+
+partition <- createDataPartition(training_set$classe, p=0.7, list=FALSE)
+training_subset <- training_set[partition, ]
+validation_subset <- training_set[-partition, ]
+dim(training_subset); dim(validation_subset)
+```
+## Prediction Algorithms
+
+As the goal is to predict the **classe** variable, we will use **classification trees** and **random forests** to classify the outcome.
+
+### Classification trees
+
+When doing k-fold cross validation normally we use k=5 or k=10 . Here we consider 5-fold cross validation when implementing the algorithm to save a little computing time. Since data transformations may be less important in non-linear models like classification trees, we do not transform any variables.
+
+```{r}
+control <- trainControl(method = "cv", number = 5)
+fit_rpart <- train(classe ~ ., data = training_subset, method = "rpart",  trControl = control)
+print(fit_rpart, digits = 4)
+```
+
+#### Plot classification tree
+
+```{r fig.height=4, fig.width=8}
+fancyRpartPlot(fit_rpart$finalModel)
+```
+
+```{r}
+# predict outcomes using validation set
+predict_rpart <- predict(fit_rpart, validation_subset)
+# Show prediction result
+(conf_rpart <- confusionMatrix(validation_subset$classe, predict_rpart))
+```
+
+##### Verify prediction accuracy
+
+```{r}
+(accuracy_rpart <- conf_rpart$overall[1])
+```
+
+##### Out of sample errors 
+
+```{r}
+oose_rpart <- 1- accuracy_rpart
+oose_rpart
+```
+
+From the confusion matrix, the accuracy rate is 0.5, and so the out-of-sample error rate is 0.5. Using classification tree does not predict the outcome classe very well.
+
+### Random Forests
+```{r}
+#fit_rf <- train(classe ~ ., data = training_subset, method = "rf", trControl = control)
+fit_rf <- randomForest(classe ~ ., data = training_subset, trControl = control)
+print(fit_rf, digits = 4)
+```
+
+```{r}
+# predict outcomes using validation set
+predict_rf <- predict(fit_rf, validation_subset)
+# Show prediction result
+(conf_rf <- confusionMatrix(validation_subset$classe, predict_rf))
+```
+
+##### Verify prediction accuracy
+
+```{r}
+(accuracy_rf <- conf_rf$overall[1])
+```
+
+##### Out of sample errors 
+
+```{r}
+oose_rf <- 1- accuracy_rf
+oose_rf
+```
+
+Above prediction accuracy shows that random forests prediction algorithm give best prediction for the given dataset with 0.996 accuracy rate and the out of sample error is only 0.004. we can apply the random forest model to our test set with confidence.
+
+### Prediction for test data
+
+```{r}
+(predict(fit_rf, test_set))
+```
